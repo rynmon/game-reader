@@ -27,7 +27,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"],
+    "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -35,12 +35,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/game-reader-engine",
-      "binaries/rvc-worker"
-    ],
     "resources": [
       "../assets/voices.json",
+      "../assets/engine-runtime.json",
       "../assets/tesseract/**/*"
     ]
   },

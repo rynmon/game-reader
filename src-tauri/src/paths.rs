@@ -29,9 +29,49 @@ pub fn kokoro_dir() -> PathBuf {
     models_dir().join("kokoro")
 }
 
+pub fn engine_bin_dir() -> PathBuf {
+    data_dir().join("binaries")
+}
+
+pub fn engine_sidecar_path() -> PathBuf {
+    engine_bin_dir().join(if cfg!(windows) {
+        "game-reader-engine.exe"
+    } else {
+        "game-reader-engine"
+    })
+}
+
+pub fn rvc_worker_path() -> PathBuf {
+    engine_bin_dir().join(if cfg!(windows) {
+        "rvc-worker.exe"
+    } else {
+        "rvc-worker"
+    })
+}
+
+pub fn engine_runtime_installed() -> bool {
+    if engine_sidecar_path().exists() && rvc_worker_path().exists() {
+        return true;
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        let service = std::env::current_dir()
+            .unwrap_or_default()
+            .join("engine")
+            .join("service.py");
+        if service.exists() {
+            return true;
+        }
+    }
+
+    false
+}
+
 pub fn ensure_dirs() {
     let _ = std::fs::create_dir_all(models_dir());
     let _ = std::fs::create_dir_all(config_dir());
+    let _ = std::fs::create_dir_all(engine_bin_dir());
 }
 
 pub fn dir_size(path: &Path) -> u64 {
@@ -52,6 +92,7 @@ pub fn dir_size(path: &Path) -> u64 {
 
 pub fn storage_usage() -> HashMap<String, u64> {
     let mut map = HashMap::new();
+    map.insert("engine-runtime".into(), dir_size(&engine_bin_dir()));
     map.insert("kokoro".into(), dir_size(&kokoro_dir()));
     if let Ok(entries) = std::fs::read_dir(models_dir()) {
         for entry in entries.flatten() {

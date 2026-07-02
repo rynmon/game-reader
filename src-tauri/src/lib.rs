@@ -22,12 +22,52 @@ pub struct AppState {
 
 #[tauri::command]
 async fn init_engine(state: State<'_, AppState>) -> Result<Value, String> {
+    if !paths::engine_runtime_installed() {
+        return Err("Download the CUDA AI runtime from Voices.".into());
+    }
     state.engine.call("init", None).await
 }
 
 #[tauri::command]
-async fn get_engine_status(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine.call("get_status", None).await
+async fn get_engine_status(app: AppHandle, state: State<'_, AppState>) -> Result<Value, String> {
+    let runtime_installed = paths::engine_runtime_installed();
+    let catalog = downloads::load_catalog(&app).unwrap_or_default();
+    if !runtime_installed {
+        return Ok(serde_json::json!({
+            "initialized": false,
+            "init_error": "Download the CUDA AI runtime from Voices.",
+            "engine_runtime_installed": false,
+            "active_voice": null,
+            "active_label": "None",
+            "installed_voices": [],
+            "voice_labels": {},
+            "catalog": catalog,
+            "kokoro_installed": false,
+        }));
+    }
+
+    match state.engine.call("get_status", None).await {
+        Ok(mut status) => {
+            if let Some(obj) = status.as_object_mut() {
+                obj.insert(
+                    "engine_runtime_installed".into(),
+                    serde_json::Value::Bool(true),
+                );
+            }
+            Ok(status)
+        }
+        Err(e) => Ok(serde_json::json!({
+            "initialized": false,
+            "init_error": e,
+            "engine_runtime_installed": true,
+            "active_voice": null,
+            "active_label": "None",
+            "installed_voices": [],
+            "voice_labels": {},
+            "catalog": catalog,
+            "kokoro_installed": false,
+        })),
+    }
 }
 
 #[tauri::command]
@@ -132,7 +172,33 @@ async fn delete_voice(voice_id: String, state: State<'_, AppState>) -> Result<()
 }
 
 #[tauri::command]
+fn get_engine_runtime_manifest(app: AppHandle) -> Result<downloads::EngineRuntimeManifest, String> {
+    downloads::get_engine_runtime_manifest(&app)
+}
+
+#[tauri::command]
+async fn download_engine_runtime(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    downloads::download_engine_runtime(app.clone()).await?;
+    state.engine.shutdown().await;
+    state.engine.call("init", None).await?;
+    let _ = app.emit("engine-event", "initialized");
+    Ok(())
+}
+
+#[tauri::command]
+async fn delete_engine_runtime(state: State<'_, AppState>) -> Result<(), String> {
+    state.engine.shutdown().await;
+    downloads::delete_engine_runtime().await
+}
+
+#[tauri::command]
 async fn download_kokoro(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    if !paths::engine_runtime_installed() {
+        return Err("Download the CUDA AI runtime first.".into());
+    }
     downloads::download_kokoro(app, state.engine.clone()).await
 }
 
@@ -220,6 +286,13 @@ pub fn run() {
             let init_engine = engine.clone();
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                if !paths::engine_runtime_installed() {
+                    let _ = handle.emit(
+                        "engine-event",
+                        "init-error:Download the CUDA AI runtime from Voices.",
+                    );
+                    return;
+                }
                 match init_engine.call("init", None).await {
                     Ok(_) => {
                         let _ = handle.emit("engine-event", "initialized");
@@ -257,6 +330,9 @@ pub fn run() {
             download_voice,
             delete_voice,
             download_kokoro,
+            get_engine_runtime_manifest,
+            download_engine_runtime,
+            delete_engine_runtime,
             get_storage_usage,
             hotkeys::get_dpi_scale,
         ])

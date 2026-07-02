@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { DownloadProgress, EngineStatus, VoiceCatalogEntry } from "./types";
+import type { DownloadProgress, EngineRuntimeManifest, EngineStatus, VoiceCatalogEntry } from "./types";
 import { formatBytes } from "./utils";
 import * as api from "./api";
 
@@ -19,16 +19,23 @@ function ProgressBar({ progress }: { progress: DownloadProgress }) {
 
 export default function VoicesTab({ status, onRefresh }: Props) {
   const [catalog, setCatalog] = useState<VoiceCatalogEntry[]>([]);
+  const [runtimeManifest, setRuntimeManifest] = useState<EngineRuntimeManifest | null>(null);
   const [progress, setProgress] = useState<Record<string, DownloadProgress>>({});
   const [kokoroProgress, setKokoroProgress] = useState<DownloadProgress | null>(null);
+  const [runtimeProgress, setRuntimeProgress] = useState<DownloadProgress | null>(null);
   const [storage, setStorage] = useState<Record<string, number>>({});
+
+  const runtimeInstalled = status?.engine_runtime_installed ?? false;
 
   useEffect(() => {
     api.getVoiceCatalog().then(setCatalog);
+    api.getEngineRuntimeManifest().then(setRuntimeManifest).catch(console.error);
     api.getStorageUsage().then(setStorage);
     const unlisten = api.onDownloadProgress((p) => {
       if (p.kind === "kokoro") {
         setKokoroProgress(p);
+      } else if (p.kind === "engine-runtime") {
+        setRuntimeProgress(p);
       } else {
         setProgress((prev) => ({ ...prev, [p.id]: p }));
       }
@@ -47,7 +54,47 @@ export default function VoicesTab({ status, onRefresh }: Props) {
   return (
     <>
       <h1 className="page-title">Voices</h1>
-      <p className="page-desc">Download models on demand to save install size.</p>
+      <p className="page-desc">Download components on demand to keep the installer small.</p>
+
+      <section className="section">
+        <h2 className="section-title">AI runtime</h2>
+        <div className="panel">
+          <div className="list-item">
+            <div className="list-body">
+              <p className="list-title">{runtimeManifest?.label ?? "CUDA AI runtime"}</p>
+              <p className="list-sub">
+                {runtimeManifest?.description ?? "PyTorch engine with NVIDIA CUDA"}{" "}
+                {runtimeManifest?.size_bytes
+                  ? `· ${formatBytes(runtimeManifest.size_bytes)}`
+                  : null}{" "}
+                · {runtimeInstalled ? "Installed" : "Required first"}
+              </p>
+              {runtimeProgress?.status === "downloading" && (
+                <ProgressBar progress={runtimeProgress} />
+              )}
+              {runtimeProgress?.status === "error" && (
+                <p className="text-error">{runtimeProgress.error}</p>
+              )}
+            </div>
+            {runtimeInstalled ? (
+              <button
+                className="btn btn-sm btn-ghost"
+                onClick={() => api.deleteEngineRuntime().then(onRefresh)}
+              >
+                Remove
+              </button>
+            ) : (
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={runtimeProgress?.status === "downloading"}
+                onClick={() => api.downloadEngineRuntime()}
+              >
+                Download
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
 
       <section className="section">
         <h2 className="section-title">Speech engine</h2>
@@ -57,7 +104,7 @@ export default function VoicesTab({ status, onRefresh }: Props) {
               <p className="list-title">Kokoro TTS</p>
               <p className="list-sub">
                 Base model · ~330 MB ·{" "}
-                {status?.kokoro_installed ? "Installed" : "Required"}
+                {status?.kokoro_installed ? "Installed" : runtimeInstalled ? "Required" : "Needs AI runtime"}
               </p>
               {kokoroProgress?.status === "downloading" && (
                 <ProgressBar progress={kokoroProgress} />
@@ -66,7 +113,11 @@ export default function VoicesTab({ status, onRefresh }: Props) {
             {status?.kokoro_installed ? (
               <span className="badge ok">Installed</span>
             ) : (
-              <button className="btn btn-primary btn-sm" onClick={() => api.downloadKokoro()}>
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={!runtimeInstalled || kokoroProgress?.status === "downloading"}
+                onClick={() => api.downloadKokoro()}
+              >
                 Download
               </button>
             )}
@@ -108,7 +159,7 @@ export default function VoicesTab({ status, onRefresh }: Props) {
                   ) : (
                     <button
                       className="btn btn-primary btn-sm"
-                      disabled={dl?.status === "downloading"}
+                      disabled={!runtimeInstalled || dl?.status === "downloading"}
                       onClick={() => api.downloadVoice(voice.id)}
                     >
                       Download
@@ -127,7 +178,13 @@ export default function VoicesTab({ status, onRefresh }: Props) {
           <div className="panel">
             {Object.entries(storage).map(([key, bytes]) => (
               <div className="row" key={key}>
-                <span className="row-label">{key.replace("voice:", "")}</span>
+                <span className="row-label">
+                  {key === "engine-runtime"
+                    ? "AI runtime"
+                    : key === "kokoro"
+                      ? "Kokoro"
+                      : key.replace("voice:", "")}
+                </span>
                 <span className="row-value">{formatBytes(bytes)}</span>
               </div>
             ))}

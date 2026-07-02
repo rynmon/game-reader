@@ -26,14 +26,24 @@ export interface EngineStatus {
   voice_labels: Record<string, string>;
   catalog: VoiceCatalogEntry[];
   kokoro_installed: boolean;
+  engine_runtime_installed?: boolean;
   gpu?: GpuInfo;
   region?: { x: number; y: number; w: number; h: number } | null;
   settings?: Record<string, unknown>;
 }
 
+export interface EngineRuntimeManifest {
+  github_repo: string;
+  release_tag: string;
+  label: string;
+  description: string;
+  size_bytes: number;
+  components: { id: string; asset: string; filename: string }[];
+}
+
 export interface DownloadProgress {
   id: string;
-  kind: "voice" | "kokoro";
+  kind: "voice" | "kokoro" | "engine-runtime";
   downloaded: number;
   total: number;
   status: "downloading" | "complete" | "error";

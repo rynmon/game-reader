@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import type { AppSettings, DownloadProgress, EngineStatus, GpuInfo, VoiceCatalogEntry } from "./types";
+import type { AppSettings, DownloadProgress, EngineRuntimeManifest, EngineStatus, GpuInfo, VoiceCatalogEntry } from "./types";
 
 export async function getEngineStatus(): Promise<EngineStatus> {
   return invoke("get_engine_status");
@@ -44,6 +44,18 @@ export async function deleteVoice(voiceId: string): Promise<void> {
 
 export async function downloadKokoro(): Promise<void> {
   return invoke("download_kokoro");
+}
+
+export async function getEngineRuntimeManifest(): Promise<EngineRuntimeManifest> {
+  return invoke("get_engine_runtime_manifest");
+}
+
+export async function downloadEngineRuntime(): Promise<void> {
+  return invoke("download_engine_runtime");
+}
+
+export async function deleteEngineRuntime(): Promise<void> {
+  return invoke("delete_engine_runtime");
 }
 
 export async function getGpuInfo(): Promise<GpuInfo> {

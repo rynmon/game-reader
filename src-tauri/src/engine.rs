@@ -51,27 +51,26 @@ impl EngineClient {
             }
         }
 
-        let candidates = [
-            app.path()
-                .resource_dir()
-                .ok()
-                .map(|d| d.join("binaries").join(sidecar_name())),
-            app.path()
-                .resource_dir()
-                .ok()
-                .map(|d| d.join(sidecar_name())),
-            std::env::current_dir()
-                .ok()
-                .map(|d| d.join("src-tauri").join("binaries").join(sidecar_name())),
-        ];
+        let mut candidates = vec![crate::paths::engine_sidecar_path()];
+        if let Ok(resource) = app.path().resource_dir() {
+            candidates.push(resource.join("binaries").join(sidecar_name()));
+            candidates.push(resource.join(sidecar_name()));
+        }
+        if let Ok(cwd) = std::env::current_dir() {
+            candidates.push(
+                cwd.join("src-tauri")
+                    .join("binaries")
+                    .join(sidecar_name()),
+            );
+        }
 
-        for c in candidates.into_iter().flatten() {
+        for c in candidates {
             if c.exists() {
                 return Ok(c);
             }
         }
 
-        Err("Engine sidecar not found. Run scripts/build-engine.ps1 or use GAME_READER_PYTHON for dev.".into())
+        Err("Engine sidecar not found. Download the AI runtime from Voices, or use GAME_READER_PYTHON for dev.".into())
     }
 
     fn env_vars(app: &AppHandle) -> Vec<(String, String)> {
@@ -210,6 +209,11 @@ impl EngineClient {
     }
 
     pub async fn shutdown(&self) {
+        let guard = self.child.lock().await;
+        if guard.is_none() {
+            return;
+        }
+        drop(guard);
         let _ = self.call("shutdown", None).await;
         if let Some(mut child) = self.child.lock().await.take() {
             let _ = child.kill().await;

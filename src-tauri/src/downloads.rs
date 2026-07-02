@@ -88,8 +88,8 @@ fn default_catalog() -> Vec<VoiceCatalogEntry> {
     ])).unwrap_or_default()
 }
 
-async fn release_asset_url(tag: &str, asset_name: &str) -> Result<(String, u64), String> {
-    let url = format!("https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{tag}");
+async fn release_asset_url(repo: &str, tag: &str, asset_name: &str) -> Result<(String, u64), String> {
+    let url = format!("https://api.github.com/repos/{repo}/releases/tags/{tag}");
     let client = Client::builder()
         .user_agent("game-reader/2.0")
         .build()
@@ -173,7 +173,7 @@ pub async fn download_voice(app: AppHandle, voice_id: String) -> Result<(), Stri
         .find(|v| v.id == voice_id)
         .ok_or_else(|| format!("Unknown voice: {voice_id}"))?;
 
-    let (url, size) = release_asset_url(&voice.release_tag, &voice.asset).await?;
+    let (url, size) = release_asset_url(GITHUB_REPO, &voice.release_tag, &voice.asset).await?;
     let dest = paths::voice_dir(&voice.id).join(&voice.asset);
 
     if let Err(e) = download_file(&app, &voice.id, "voice", &url, dest.clone(), size).await {
@@ -308,4 +308,178 @@ pub async fn download_kokoro(app: AppHandle, engine: crate::engine::SharedEngine
             Err(e)
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EngineRuntimeComponent {
+    pub id: String,
+    pub asset: String,
+    pub filename: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EngineRuntimeManifest {
+    pub github_repo: String,
+    pub release_tag: String,
+    pub label: String,
+    pub description: String,
+    pub size_bytes: u64,
+    pub components: Vec<EngineRuntimeComponent>,
+}
+
+pub fn load_engine_runtime_manifest(app: &AppHandle) -> Result<EngineRuntimeManifest, String> {
+    let resource = app.path().resource_dir().map_err(|e| e.to_string())?;
+    let candidates = [
+        resource.join("engine-runtime.json"),
+        resource.join("assets").join("engine-runtime.json"),
+        PathBuf::from("assets").join("engine-runtime.json"),
+    ];
+    for path in candidates {
+        if path.exists() {
+            let data = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+            return serde_json::from_str(&data).map_err(|e| e.to_string());
+        }
+    }
+    Err("engine-runtime.json not found".into())
+}
+
+pub fn get_engine_runtime_manifest(app: &AppHandle) -> Result<EngineRuntimeManifest, String> {
+    load_engine_runtime_manifest(app)
+}
+
+pub async fn download_engine_runtime(app: AppHandle) -> Result<(), String> {
+    let manifest = load_engine_runtime_manifest(&app)?;
+    let repo = manifest.github_repo.clone();
+    let tag = manifest.release_tag.clone();
+
+    let mut component_sizes: Vec<(EngineRuntimeComponent, String, u64)> = Vec::new();
+    let mut total: u64 = 0;
+    for component in &manifest.components {
+        let (url, size) = release_asset_url(&repo, &tag, &component.asset).await?;
+        total += size;
+        component_sizes.push((component.clone(), url, size));
+    }
+
+    let mut downloaded_total: u64 = 0;
+    emit_progress(
+        &app,
+        DownloadProgress {
+            id: "engine-runtime".into(),
+            kind: "engine-runtime".into(),
+            downloaded: 0,
+            total,
+            status: "downloading".into(),
+            error: None,
+        },
+    );
+
+    for (component, url, size) in component_sizes {
+        let dest = paths::engine_bin_dir().join(&component.filename);
+        let base_downloaded = downloaded_total;
+
+        if let Err(e) = download_file_with_offset(
+            &app,
+            "engine-runtime",
+            "engine-runtime",
+            &url,
+            dest,
+            size,
+            total,
+            base_downloaded,
+        )
+        .await
+        {
+            emit_progress(
+                &app,
+                DownloadProgress {
+                    id: "engine-runtime".into(),
+                    kind: "engine-runtime".into(),
+                    downloaded: base_downloaded,
+                    total,
+                    status: "error".into(),
+                    error: Some(e.clone()),
+                },
+            );
+            return Err(e);
+        }
+
+        downloaded_total += size;
+    }
+
+    emit_progress(
+        &app,
+        DownloadProgress {
+            id: "engine-runtime".into(),
+            kind: "engine-runtime".into(),
+            downloaded: total,
+            total,
+            status: "complete".into(),
+            error: None,
+        },
+    );
+
+    Ok(())
+}
+
+async fn download_file_with_offset(
+    app: &AppHandle,
+    id: &str,
+    kind: &str,
+    url: &str,
+    dest: PathBuf,
+    file_total: u64,
+    overall_total: u64,
+    overall_base: u64,
+) -> Result<(), String> {
+    paths::ensure_dirs();
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+
+    let client = Client::builder()
+        .user_agent("game-reader/2.0")
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+    if !response.status().is_success() {
+        return Err(format!("Download failed: HTTP {}", response.status()));
+    }
+
+    let mut stream = response.bytes_stream();
+    let mut file_downloaded: u64 = 0;
+    let mut file = tokio::fs::File::create(&dest)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    use tokio::io::AsyncWriteExt;
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| e.to_string())?;
+        file_downloaded += chunk.len() as u64;
+        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
+        emit_progress(
+            app,
+            DownloadProgress {
+                id: id.into(),
+                kind: kind.into(),
+                downloaded: overall_base + file_downloaded,
+                total: overall_total,
+                status: "downloading".into(),
+                error: None,
+            },
+        );
+    }
+
+    file.flush().await.map_err(|e| e.to_string())?;
+    let _ = file_total;
+    Ok(())
+}
+
+pub async fn delete_engine_runtime() -> Result<(), String> {
+    let dir = paths::engine_bin_dir();
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| e.to_string())?;
+    }
+    paths::ensure_dirs();
+    Ok(())
 }

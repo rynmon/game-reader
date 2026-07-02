@@ -12,8 +12,9 @@ interface Props {
 export default function HomeTab({ status, onRefresh }: Props) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const gpu = status?.gpu;
-  const needsKokoro = status && !status.kokoro_installed;
-  const needsVoice = status && status.installed_voices.length === 0;
+  const needsRuntime = status && !status.engine_runtime_installed;
+  const needsKokoro = status && status.engine_runtime_installed && !status.kokoro_installed;
+  const needsVoice = status && status.engine_runtime_installed && status.installed_voices.length === 0;
 
   const engineState = status?.initialized
     ? "ok"
@@ -38,13 +39,15 @@ export default function HomeTab({ status, onRefresh }: Props) {
         </div>
       )}
 
-      {(needsKokoro || needsVoice) && (
+      {(needsRuntime || needsKokoro || needsVoice) && (
         <div className="alert alert-warn">
-          {needsKokoro && needsVoice
-            ? "Download the speech engine and at least one voice before reading."
-            : needsKokoro
-              ? "Download the Kokoro speech engine from Voices."
-              : "Install a character voice from Voices."}
+          {needsRuntime
+            ? "Download the CUDA AI runtime from Voices before continuing."
+            : needsKokoro && needsVoice
+              ? "Download the speech engine and at least one voice before reading."
+              : needsKokoro
+                ? "Download the Kokoro speech engine from Voices."
+                : "Install a character voice from Voices."}
         </div>
       )}
 

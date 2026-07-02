@@ -1,0 +1,19 @@
+{
+  "github_repo": "rynmon/game-reader",
+  "release_tag": "v2.0.0",
+  "label": "CUDA AI runtime",
+  "description": "PyTorch, Kokoro, and RVC engine with NVIDIA CUDA (~11 GB)",
+  "size_bytes": 11800000000,
+  "components": [
+    {
+      "id": "engine",
+      "asset": "game-reader-engine-x86_64-pc-windows-msvc.exe",
+      "filename": "game-reader-engine.exe"
+    },
+    {
+      "id": "rvc-worker",
+      "asset": "rvc-worker-x86_64-pc-windows-msvc.exe",
+      "filename": "rvc-worker.exe"
+    }
+  ]
+}
