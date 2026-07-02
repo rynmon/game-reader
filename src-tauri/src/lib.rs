@@ -2,17 +2,22 @@ use std::sync::Arc;
 
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::ShortcutState;
 
+mod config;
 mod downloads;
 mod engine;
 mod hotkeys;
 mod paths;
 
+use config::{config_from_value, config_to_value, load_config, save_config, AppConfig};
 use engine::{EngineClient, SharedEngine};
+use hotkeys::{register_hotkeys, HotkeyBindings};
+use std::sync::Mutex;
 
 pub struct AppState {
     pub engine: SharedEngine,
+    pub hotkeys: Mutex<HotkeyBindings>,
 }
 
 #[tauri::command]
@@ -61,13 +66,30 @@ async fn get_gpu_info(state: State<'_, AppState>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn get_settings(state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine.call("load_config", None).await
+fn get_settings() -> Result<Value, String> {
+    Ok(config_to_value(&load_config()))
 }
 
 #[tauri::command]
-async fn save_settings(settings: Value, state: State<'_, AppState>) -> Result<Value, String> {
-    state.engine.call("save_config", Some(settings)).await
+fn format_hotkey(hotkey: String) -> String {
+    hotkeys::format_hotkey(&hotkey)
+}
+
+#[tauri::command]
+async fn save_settings(
+    settings: Value,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let config: AppConfig = config_from_value(settings)?;
+    save_config(&config)?;
+
+    let bindings = register_hotkeys(&app, &config)?;
+    *state.hotkeys.lock().map_err(|e| e.to_string())? = bindings;
+
+    let value = config_to_value(&config);
+    let _ = state.engine.call("save_config", Some(value.clone())).await;
+    Ok(value)
 }
 
 #[tauri::command]
@@ -119,52 +141,6 @@ fn get_storage_usage() -> Result<std::collections::HashMap<String, u64>, String>
     Ok(paths::storage_usage())
 }
 
-fn register_shortcuts(app: &AppHandle) -> Result<(), String> {
-    let gs = app.global_shortcut();
-    let shortcuts = [
-        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyR),
-        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyT),
-        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyS),
-        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyV),
-        Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::KeyQ),
-    ];
-    for s in shortcuts {
-        gs.register(s).map_err(|e| e.to_string())?;
-    }
-    Ok(())
-}
-
-fn handle_shortcut(app: &AppHandle, shortcut: &Shortcut) {
-    let state = app.state::<AppState>();
-    let eng = state.engine.clone();
-    let app_handle = app.clone();
-
-    let mods = Modifiers::CONTROL | Modifiers::SHIFT;
-
-    if shortcut.mods == mods && shortcut.key == Code::KeyR {
-        tauri::async_runtime::spawn(async move {
-            let _ = hotkeys::open_region_selector(app_handle).await;
-        });
-    } else if shortcut.mods == mods && shortcut.key == Code::KeyT {
-        tauri::async_runtime::spawn(async move {
-            let _ = eng.call("read_region", None).await;
-        });
-    } else if shortcut.mods == mods && shortcut.key == Code::KeyS {
-        tauri::async_runtime::spawn(async move {
-            let _ = eng.call("stop", None).await;
-        });
-    } else if shortcut.mods == mods && shortcut.key == Code::KeyV {
-        tauri::async_runtime::spawn(async move {
-            let _ = eng.call("cycle_voice", None).await;
-        });
-    } else if shortcut.mods == mods && shortcut.key == Code::KeyQ {
-        tauri::async_runtime::spawn(async move {
-            eng.shutdown().await;
-            app_handle.exit(0);
-        });
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -175,7 +151,9 @@ pub fn run() {
                     if event.state != ShortcutState::Pressed {
                         return;
                     }
-                    handle_shortcut(app, shortcut);
+                    let state = app.state::<AppState>();
+                    let bindings = state.hotkeys.lock().unwrap();
+                    hotkeys::handle_hotkey(app, shortcut, &bindings);
                 })
                 .build(),
         )
@@ -183,8 +161,15 @@ pub fn run() {
             paths::ensure_dirs();
 
             let engine = Arc::new(EngineClient::new(app.handle().clone()));
+            let config = load_config();
+            let bindings = register_hotkeys(app.handle(), &config).unwrap_or_else(|e| {
+                eprintln!("Failed to register hotkeys: {e}");
+                HotkeyBindings::empty()
+            });
+
             app.manage(AppState {
                 engine: engine.clone(),
+                hotkeys: Mutex::new(bindings),
             });
 
             use tauri::menu::{Menu, MenuItem};
@@ -232,10 +217,6 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            if let Err(e) = register_shortcuts(app.handle()) {
-                eprintln!("Failed to register hotkeys: {e}");
-            }
-
             let init_engine = engine.clone();
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -269,6 +250,7 @@ pub fn run() {
             get_gpu_info,
             get_settings,
             save_settings,
+            format_hotkey,
             complete_region_selection,
             open_region_selector,
             get_voice_catalog,

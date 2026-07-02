@@ -55,7 +55,8 @@ export async function getSettings(): Promise<AppSettings> {
 }
 
 export async function saveSettings(settings: Partial<AppSettings>): Promise<AppSettings> {
-  return invoke("save_settings", { settings });
+  const result = await invoke<AppSettings>("save_settings", { settings });
+  return result;
 }
 
 export async function getStorageUsage(): Promise<Record<string, number>> {

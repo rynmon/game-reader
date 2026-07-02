@@ -74,6 +74,14 @@ def _read_region():
     return {"spoken": True, "text": text}
 
 
+def _init_engine():
+    config.load()
+    result = tts.init()
+    _ensure_prefetch()
+    status = tts.get_status()
+    return {**result, **status}
+
+
 def handle(method: str, params: dict | None):
     params = params or {}
 
@@ -88,8 +96,10 @@ def handle(method: str, params: dict | None):
         return config.all_settings()
 
     if method == "save_config":
-        for key, value in params.items():
-            config.set(key, value)
+        data = params.get("settings", params)
+        if isinstance(data, dict):
+            for key, value in data.items():
+                config.set(key, value)
         return config.all_settings()
 
     if method == "save_region":
@@ -97,11 +107,7 @@ def handle(method: str, params: dict | None):
         return config.get_region()
 
     if method == "init":
-        config.load()
-        result = tts.init()
-        _ensure_prefetch()
-        status = tts.get_status()
-        return {**result, **status}
+        return _init_engine()
 
     if method == "download_kokoro":
         os.environ["GAME_READER_ALLOW_HF_DOWNLOAD"] = "1"
@@ -157,18 +163,21 @@ def _dispatch(req: dict):
     method = req.get("method")
     params = req.get("params")
 
-    try:
-        if method in ("read_region", "speak", "cycle_voice"):
-            future = _executor.submit(handle, method, params)
-            result = future.result()
-        else:
-            result = handle(method, params)
-        if id_ is not None:
-            _reply(id_, result=result)
-    except Exception as e:
-        traceback.print_exc(file=sys.stderr)
-        if id_ is not None:
-            _reply(id_, error=_error(-32000, str(e)))
+    def work():
+        try:
+            if method in ("read_region", "speak", "cycle_voice"):
+                future = _executor.submit(handle, method, params)
+                result = future.result()
+            else:
+                result = handle(method, params)
+            if id_ is not None:
+                _reply(id_, result=result)
+        except Exception as e:
+            traceback.print_exc(file=sys.stderr)
+            if id_ is not None:
+                _reply(id_, error=_error(-32000, str(e)))
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 def main():

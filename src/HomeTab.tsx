@@ -1,4 +1,7 @@
-import type { EngineStatus } from "./types";
+import { useEffect, useState } from "react";
+import type { AppSettings, EngineStatus } from "./types";
+import { DEFAULT_SETTINGS } from "./utils";
+import ShortcutsPanel from "./ShortcutsPanel";
 import * as api from "./api";
 
 interface Props {
@@ -7,6 +10,7 @@ interface Props {
 }
 
 export default function HomeTab({ status, onRefresh }: Props) {
+  const [settings, setSettings] = useState<AppSettings | null>(null);
   const gpu = status?.gpu;
   const needsKokoro = status && !status.kokoro_installed;
   const needsVoice = status && status.installed_voices.length === 0;
@@ -16,6 +20,12 @@ export default function HomeTab({ status, onRefresh }: Props) {
     : status?.init_error
       ? "error"
       : "warn";
+
+  useEffect(() => {
+    api.getSettings().then((s) => setSettings({ ...DEFAULT_SETTINGS, ...s }));
+  }, []);
+
+  const shortcutSettings = settings ?? DEFAULT_SETTINGS;
 
   return (
     <>
@@ -86,20 +96,8 @@ export default function HomeTab({ status, onRefresh }: Props) {
 
       <section className="section">
         <h2 className="section-title">Shortcuts</h2>
-        <div className="panel" style={{ padding: "16px" }}>
-          <div className="hotkey-grid">
-            <kbd>Ctrl+Shift+R</kbd>
-            <span>Select region</span>
-            <kbd>Ctrl+Shift+T</kbd>
-            <span>Read region</span>
-            <kbd>Ctrl+Shift+S</kbd>
-            <span>Stop speech</span>
-            <kbd>Ctrl+Shift+V</kbd>
-            <span>Cycle voice</span>
-            <kbd>Ctrl+Shift+Q</kbd>
-            <span>Quit</span>
-          </div>
-        </div>
+        <ShortcutsPanel settings={shortcutSettings} />
+        <p className="section-hint">Customize bindings in Settings.</p>
       </section>
     </>
   );

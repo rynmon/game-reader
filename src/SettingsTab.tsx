@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AppSettings, EngineStatus } from "./types";
+import { DEFAULT_SETTINGS } from "./utils";
+import HotkeyBind from "./HotkeyBind";
 import * as api from "./api";
 
 interface Props {
@@ -7,19 +9,42 @@ interface Props {
   onRefresh: () => void;
 }
 
+const HOTKEY_FIELDS: {
+  key: keyof AppSettings;
+  label: string;
+  description: string;
+}[] = [
+  { key: "hotkey_select", label: "Select region", description: "Open the screen region picker" },
+  { key: "hotkey_read", label: "Read region", description: "OCR and read the selected area" },
+  { key: "hotkey_stop", label: "Stop speech", description: "Stop current playback" },
+  { key: "hotkey_cycle", label: "Cycle voice", description: "Switch between installed voices" },
+  { key: "hotkey_quit", label: "Quit", description: "Exit Game Reader" },
+];
+
 export default function SettingsTab({ status, onRefresh }: Props) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.getSettings().then(setSettings);
-  }, [status]);
+    setLoading(true);
+    setError(null);
+    api
+      .getSettings()
+      .then((s) => setSettings({ ...DEFAULT_SETTINGS, ...s }))
+      .catch((e) => {
+        setError(String(e));
+        setSettings({ ...DEFAULT_SETTINGS });
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
-  if (!settings) {
+  if (loading || !settings) {
     return (
       <>
         <h1 className="page-title">Settings</h1>
-        <div className="empty">Loading…</div>
+        <div className="empty">{error ? `Failed to load: ${error}` : "Loading…"}</div>
       </>
     );
   }
@@ -27,13 +52,21 @@ export default function SettingsTab({ status, onRefresh }: Props) {
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     setSettings((s) => (s ? { ...s, [key]: value } : s));
     setSaved(false);
+    setError(null);
   }
 
   async function save() {
     if (!settings) return;
-    await api.saveSettings(settings);
-    setSaved(true);
-    onRefresh();
+    try {
+      const updated = await api.saveSettings(settings);
+      setSettings({ ...DEFAULT_SETTINGS, ...updated });
+      setSaved(true);
+      setError(null);
+      onRefresh();
+    } catch (e) {
+      setError(String(e));
+      setSaved(false);
+    }
   }
 
   const installed = status?.installed_voices ?? [];
@@ -42,6 +75,8 @@ export default function SettingsTab({ status, onRefresh }: Props) {
     <>
       <h1 className="page-title">Settings</h1>
       <p className="page-desc">Voice, performance, and keyboard shortcuts.</p>
+
+      {error && <div className="alert alert-error">{error}</div>}
 
       <section className="section">
         <h2 className="section-title">Voice</h2>
@@ -53,7 +88,7 @@ export default function SettingsTab({ status, onRefresh }: Props) {
               value={settings.active_voice}
               onChange={(e) => {
                 update("active_voice", e.target.value);
-                api.setActiveVoice(e.target.value);
+                if (e.target.value) api.setActiveVoice(e.target.value);
               }}
             >
               {installed.length === 0 && <option value="">No voices installed</option>}
@@ -103,28 +138,16 @@ export default function SettingsTab({ status, onRefresh }: Props) {
 
       <section className="section">
         <h2 className="section-title">Shortcuts</h2>
+        <p className="section-hint">Click a shortcut to rebind. Press Escape to cancel.</p>
         <div className="panel">
-          <p className="hint" style={{ padding: "14px 16px 0", margin: 0 }}>
-            Changes apply after saving and restarting the app.
-          </p>
-          {(
-            [
-              ["hotkey_select", "Select region"],
-              ["hotkey_read", "Read region"],
-              ["hotkey_stop", "Stop speech"],
-              ["hotkey_cycle", "Cycle voice"],
-              ["hotkey_quit", "Quit"],
-            ] as const
-          ).map(([key, label]) => (
-            <div className="form-group" key={key}>
-              <label htmlFor={key}>{label}</label>
-              <input
-                id={key}
-                type="text"
-                value={settings[key]}
-                onChange={(e) => update(key, e.target.value)}
-              />
-            </div>
+          {HOTKEY_FIELDS.map(({ key, label, description }) => (
+            <HotkeyBind
+              key={key}
+              label={label}
+              description={description}
+              value={settings[key] as string}
+              onChange={(value) => update(key, value)}
+            />
           ))}
         </div>
       </section>
@@ -133,7 +156,7 @@ export default function SettingsTab({ status, onRefresh }: Props) {
         <button className="btn btn-primary" onClick={save}>
           Save settings
         </button>
-        {saved && <span className="saved-msg">Saved</span>}
+        {saved && <span className="saved-msg">Saved — shortcuts updated</span>}
       </div>
     </>
   );
