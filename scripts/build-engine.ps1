@@ -10,9 +10,11 @@ Set-Location $Root
 
 function Invoke-Python {
     param([string[]]$Args)
-    & $Python @Args
+    Write-Host ">>> python $($Args -join ' ')"
+    $output = & $Python @Args 2>&1
+    if ($output) { $output | ForEach-Object { Write-Host $_ } }
     if ($LASTEXITCODE -ne 0) {
-        throw "Command failed: python $($Args -join ' ')"
+        throw "Command failed (exit $LASTEXITCODE): python $($Args -join ' ')"
     }
 }
 
@@ -37,6 +39,9 @@ if (-not $SkipTorch) {
     }
 }
 
+Write-Host "==> Verifying torch..."
+Invoke-Python -Args @("-c", "import torch; print('torch', torch.__version__)")
+
 Write-Host "==> Verifying rvc-python on current Python..."
 Invoke-Python -Args @("-c", "from rvc_python.infer import RVCInference; print('rvc-python OK')")
 
@@ -49,20 +54,35 @@ $PyInstallerArgs = @(
     "-m", "PyInstaller", "--noconfirm", "--clean",
     "--distpath", $DistPath,
     "--workpath", $WorkPath,
-    "--specpath", (Join-Path $Root "engine")
+    "--log-level", "INFO"
 )
 
-Invoke-Python -Args ($PyInstallerArgs + @("engine/game-reader-engine.spec"))
-Invoke-Python -Args ($PyInstallerArgs + @("engine/rvc-worker.spec"))
+$EngineSpec = Join-Path $Root "engine/game-reader-engine.spec"
+$WorkerSpec = Join-Path $Root "engine/rvc-worker.spec"
 
-$EngineExe = Join-Path $DistPath "game-reader-engine.exe"
-$WorkerExe = Join-Path $DistPath "rvc-worker.exe"
-if (-not (Test-Path $EngineExe)) {
-    throw "PyInstaller did not produce $EngineExe"
+Invoke-Python -Args ($PyInstallerArgs + @($EngineSpec))
+Invoke-Python -Args ($PyInstallerArgs + @($WorkerSpec))
+
+function Resolve-BuiltExe {
+    param([string]$Name)
+    $candidates = @(
+        (Join-Path $DistPath "$Name.exe"),
+        (Join-Path $Root "engine/dist/$Name.exe"),
+        (Join-Path $DistPath $Name)
+    )
+    foreach ($path in $candidates) {
+        if (Test-Path $path) { return $path }
+    }
+    Write-Host "==> Build artifacts under dist/:"
+    if (Test-Path $DistPath) { Get-ChildItem -Recurse $DistPath | ForEach-Object { Write-Host $_.FullName } }
+    Write-Host "==> Build artifacts under engine/dist/:"
+    $engineDist = Join-Path $Root "engine/dist"
+    if (Test-Path $engineDist) { Get-ChildItem -Recurse $engineDist | ForEach-Object { Write-Host $_.FullName } }
+    throw "PyInstaller did not produce $Name.exe"
 }
-if (-not (Test-Path $WorkerExe)) {
-    throw "PyInstaller did not produce $WorkerExe"
-}
+
+$EngineExe = Resolve-BuiltExe -Name "game-reader-engine"
+$WorkerExe = Resolve-BuiltExe -Name "rvc-worker"
 
 $BinDir = Join-Path $Root "src-tauri/binaries"
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null

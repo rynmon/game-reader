@@ -45,6 +45,8 @@ jobs:
       - name: Build Python engine sidecar
         shell: pwsh
         run: ./scripts/build-engine.ps1
+        env:
+          PYTHONUNBUFFERED: "1"
 
       - name: Build Tauri installer
         run: npm run tauri build
