@@ -24,8 +24,14 @@ Write-Host "==> Installing engine dependencies..."
 
 if (-not $SkipTorch) {
     Write-Host "==> Installing PyTorch CUDA (this may take a while)..."
-    & $Python -m pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 `
-        --index-url https://download.pytorch.org/whl/cu128
+    try {
+        & $Python -m pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 `
+            --index-url https://download.pytorch.org/whl/cu128
+    } catch {
+        Write-Warning "cu128 wheels unavailable, falling back to cu124..."
+        & $Python -m pip install torch torchvision torchaudio `
+            --index-url https://download.pytorch.org/whl/cu124
+    }
 }
 
 Write-Host "==> Verifying rvc-python on current Python..."

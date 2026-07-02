@@ -36,7 +36,8 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/game-reader-engine"
+      "binaries/game-reader-engine",
+      "binaries/rvc-worker"
     ],
     "resources": [
       "../assets/voices.json",
