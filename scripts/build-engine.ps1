@@ -9,30 +9,30 @@ $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location $Root
 
 function Invoke-Python {
-    param([string[]]$Args)
-    Write-Host ">>> python $($Args -join ' ')"
-    $output = & $Python @Args 2>&1
+    param([string[]]$PythonArgs)
+    Write-Host ">>> python $($PythonArgs -join ' ')"
+    $output = & $Python @PythonArgs 2>&1
     if ($output) { $output | ForEach-Object { Write-Host $_ } }
     if ($LASTEXITCODE -ne 0) {
-        throw "Command failed (exit $LASTEXITCODE): python $($Args -join ' ')"
+        throw "Command failed (exit $LASTEXITCODE): python $($PythonArgs -join ' ')"
     }
 }
 
 Write-Host "==> Installing engine dependencies..."
-Invoke-Python -Args @("-m", "pip", "install", "--upgrade", "pip<24.1")
-Invoke-Python -Args @("-m", "pip", "install", "-r", "engine/requirements.txt")
+Invoke-Python -PythonArgs @("-m", "pip", "install", "--upgrade", "pip<24.1")
+Invoke-Python -PythonArgs @("-m", "pip", "install", "-r", "engine/requirements.txt")
 
 if (-not $SkipTorch) {
     Write-Host "==> Installing PyTorch CUDA (this may take a while)..."
     try {
-        Invoke-Python -Args @(
+        Invoke-Python -PythonArgs @(
             "-m", "pip", "install",
             "torch==2.11.0+cu128", "torchvision==0.26.0+cu128", "torchaudio==2.11.0+cu128",
             "--index-url", "https://download.pytorch.org/whl/cu128"
         )
     } catch {
         Write-Warning "cu128 wheels unavailable, falling back to cu124..."
-        Invoke-Python -Args @(
+        Invoke-Python -PythonArgs @(
             "-m", "pip", "install", "torch", "torchvision", "torchaudio",
             "--index-url", "https://download.pytorch.org/whl/cu124"
         )
@@ -40,10 +40,10 @@ if (-not $SkipTorch) {
 }
 
 Write-Host "==> Verifying torch..."
-Invoke-Python -Args @("-c", "import torch; print('torch', torch.__version__)")
+Invoke-Python -PythonArgs @("-c", "import torch; print('torch', torch.__version__)")
 
 Write-Host "==> Verifying rvc-python on current Python..."
-Invoke-Python -Args @("-c", "from rvc_python.infer import RVCInference; print('rvc-python OK')")
+Invoke-Python -PythonArgs @("-c", "from rvc_python.infer import RVCInference; print('rvc-python OK')")
 
 Write-Host "==> Building PyInstaller bundles..."
 $DistPath = Join-Path $Root "dist"
@@ -60,8 +60,8 @@ $PyInstallerArgs = @(
 $EngineSpec = Join-Path $Root "engine/game-reader-engine.spec"
 $WorkerSpec = Join-Path $Root "engine/rvc-worker.spec"
 
-Invoke-Python -Args ($PyInstallerArgs + @($EngineSpec))
-Invoke-Python -Args ($PyInstallerArgs + @($WorkerSpec))
+Invoke-Python -PythonArgs ($PyInstallerArgs + @($EngineSpec))
+Invoke-Python -PythonArgs ($PyInstallerArgs + @($WorkerSpec))
 
 function Resolve-BuiltExe {
     param([string]$Name)
