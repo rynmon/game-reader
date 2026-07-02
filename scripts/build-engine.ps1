@@ -41,14 +41,35 @@ Write-Host "==> Verifying rvc-python on current Python..."
 Invoke-Python -Args @("-c", "from rvc_python.infer import RVCInference; print('rvc-python OK')")
 
 Write-Host "==> Building PyInstaller bundles..."
-Invoke-Python -Args @("-m", "PyInstaller", "--noconfirm", "--clean", "engine/game-reader-engine.spec")
+$DistPath = Join-Path $Root "dist"
+$WorkPath = Join-Path $Root "build/pyinstaller"
+New-Item -ItemType Directory -Force -Path $DistPath, $WorkPath | Out-Null
+
+$PyInstallerArgs = @(
+    "-m", "PyInstaller", "--noconfirm", "--clean",
+    "--distpath", $DistPath,
+    "--workpath", $WorkPath,
+    "--specpath", (Join-Path $Root "engine")
+)
+
+Invoke-Python -Args ($PyInstallerArgs + @("engine/game-reader-engine.spec"))
+Invoke-Python -Args ($PyInstallerArgs + @("engine/rvc-worker.spec"))
+
+$EngineExe = Join-Path $DistPath "game-reader-engine.exe"
+$WorkerExe = Join-Path $DistPath "rvc-worker.exe"
+if (-not (Test-Path $EngineExe)) {
+    throw "PyInstaller did not produce $EngineExe"
+}
+if (-not (Test-Path $WorkerExe)) {
+    throw "PyInstaller did not produce $WorkerExe"
+}
 
 $BinDir = Join-Path $Root "src-tauri/binaries"
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 
 $Triple = "x86_64-pc-windows-msvc"
-Copy-Item (Join-Path $Root "dist/game-reader-engine.exe") (Join-Path $BinDir "game-reader-engine-$Triple.exe") -Force
-Copy-Item (Join-Path $Root "dist/rvc-worker.exe") (Join-Path $BinDir "rvc-worker-$Triple.exe") -Force
+Copy-Item $EngineExe (Join-Path $BinDir "game-reader-engine-$Triple.exe") -Force
+Copy-Item $WorkerExe (Join-Path $BinDir "rvc-worker-$Triple.exe") -Force
 
 Write-Host "==> Done."
 Write-Host "    Engine: src-tauri/binaries/game-reader-engine-$Triple.exe"

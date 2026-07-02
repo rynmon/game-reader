@@ -55,7 +55,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
     console=True,
@@ -64,38 +64,4 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-)
-
-# Separate RVC worker one-file (fallback if unified env fails)
-worker = Analysis(
-    [os.path.join(SPECPATH, "rvc_worker_entry.py")],
-    pathex=[root],
-    binaries=[],
-    datas=[],
-    hiddenimports=["engine", "engine.rvc_worker", "engine.paths", "engine.voices", "rvc_python"],
-    hookspath=[],
-    hooksconfig={},
-    runtime_hooks=[],
-    excludes=["tkinter"],
-    win_no_prefer_redirects=False,
-    win_private_assemblies=False,
-    cipher=block_cipher,
-    noarchive=False,
-)
-
-worker_pyz = PYZ(worker.pure, worker.zipped_data, cipher=block_cipher)
-
-worker_exe = EXE(
-    worker_pyz,
-    worker.scripts,
-    worker.binaries,
-    worker.zipfiles,
-    worker.datas,
-    [],
-    name="rvc-worker",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    console=True,
 )
