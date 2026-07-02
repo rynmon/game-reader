@@ -33,16 +33,14 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install 7-Zip
+      - name: Install 7-Zip and Tesseract
         shell: pwsh
-        run: choco install 7zip -y
+        run: |
+          choco install 7zip tesseract -y --no-progress
+          ./scripts/fetch-tesseract.ps1
 
       - name: Install Node dependencies
         run: npm ci
-
-      - name: Fetch Tesseract
-        shell: pwsh
-        run: ./scripts/fetch-tesseract.ps1
 
       - name: Build Python engine sidecar
         shell: pwsh
