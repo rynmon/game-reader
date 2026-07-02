@@ -4,7 +4,8 @@ pytesseract>=0.3.10
 kokoro>=0.9.4
 sounddevice>=0.4.6
 soundfile>=0.12.0
-numpy>=1.24.0
+numpy==1.23.5
 soxr>=1.0.0
 transformers==5.2.0
 rvc-python>=0.1.0
+pyinstaller>=6.0.0
