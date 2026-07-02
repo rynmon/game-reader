@@ -6,6 +6,26 @@ __pycache__/
 # Virtual environments
 rvc_env/
 applio_env/
+venv/
+.venv/
+
+# Tauri / Node
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/binaries/
+
+# PyInstaller
+build/
+*.spec.bak
+engine/dist/
+engine/build/
+dist/game-reader-engine/
+dist/rvc-worker/
+
+# Bundled Tesseract (downloaded at build time)
+assets/tesseract/tesseract.exe
+assets/tesseract/tessdata/
 
 # Applio training repo (clone separately if you want to train)
 Applio/

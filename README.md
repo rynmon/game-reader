@@ -1,107 +1,127 @@
 # Game Reader
 
-A Windows desktop tool that lets you select a region of your screen, then press a hotkey to have the text read aloud. Built for games — works in borderless windowed mode, remembers your selected region across sessions, and runs silently in the system tray.
+A Windows desktop tool that lets you select a region of your screen, then press a hotkey to have the text read aloud. Built for games — works in borderless windowed mode, remembers your selected region across sessions, and runs from the system tray.
 
-Comes with two voices, both running fully locally on GPU (Kokoro TTS generates the speech, then an RVC model converts the voice):
+Character voices run fully locally on GPU (Kokoro TTS generates speech, then an RVC model converts the voice):
+
 - **Dagoth Ur** — trained RVC voice model from Morrowind
-- **Narrator** — trained RVC voice model of the Baldur's Gate 3 narrator *(default on launch)*
+- **Narrator** — trained RVC voice model of the Baldur's Gate 3 narrator *(recommended default)*
 
-Everything runs locally. No API keys, no internet required after setup.
+Everything runs locally. No API keys, no manual Python setup.
 
 ---
 
-## What it does
+## What's new in v2
 
-- Draw a box over any text on screen (quest text, tooltips, subtitles, item descriptions)
-- Press a hotkey — the text gets OCR'd and read aloud
-- The region is saved so you only draw it once
-- Switch between the Dagoth Ur and Narrator voices with a hotkey
-- Stop playback instantly with another hotkey
+Game Reader is now a **standalone desktop app** (Tauri + bundled Python engine):
+
+- Single installer — no Python, Tesseract, or pip steps
+- In-app downloads for Kokoro (~330 MB) and character voices (~53 MB each)
+- Settings UI for hotkeys, voice selection, and storage
+- Global hotkeys without running as Administrator
 
 ---
 
 ## Requirements
 
 - Windows 10/11
-- Python 3.11 — [python.org](https://www.python.org/downloads/)
-- Python 3.10 (for the RVC voice env) — [python.org](https://www.python.org/downloads/release/python-31011/)
-- NVIDIA GPU with CUDA (for Kokoro TTS and RVC inference) — CPU fallback works but is slow
-- [Tesseract-OCR](https://github.com/UB-Mannheim/tesseract/wiki) — install to `C:\Program Files\Tesseract-OCR\`, select English language data during install
-- Must be run as **Administrator** (required for global hotkeys)
+- **NVIDIA GPU with CUDA** (required for voice inference)
 
 ---
 
-## Setup
+## Install (end users)
 
-### 1. Clone the repo
-
-```
-git clone https://github.com/baylic/game-reader.git
-cd game-reader
-```
-
-### 2. Install main Python dependencies
-
-```
-pip install -r requirements.txt
-pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128
-```
-
-> If you don't have a CUDA GPU, skip the second line — CPU torch from requirements.txt will be used automatically.
-
-### 3. Set up the RVC voice environment (for the Dagoth Ur and Narrator voices)
-
-```
-py -3.10 -m venv rvc_env
-rvc_env\Scripts\pip install rvc-python
-```
-
-### 4. Get the RVC voice models
-
-Download the model files from the [Releases page](https://github.com/baylic/game-reader/releases) and place them at the paths below. Create the folders manually if they don't exist.
-
-**Dagoth Ur** (from the v1.0 release):
-
-```
-game-reader\Applio\logs\dagoth_ur\dagoth_ur_v2.pth
-game-reader\Applio\logs\dagoth_ur\dagoth_ur.index
-```
-
-**Narrator** (from the v1.1 release):
-
-```
-game-reader\Applio\logs\bg3_narrator\bg3_narrator_v2.pth
-game-reader\Applio\logs\bg3_narrator\bg3_narrator.index
-```
-
-### 5. Run as Administrator
-
-Right-click your terminal → "Run as administrator", then:
-
-```
-python main.py
-```
+1. Download the latest `.msi` or `.exe` installer from [Releases](https://github.com/baylic/game-reader/releases)
+2. Run the installer
+3. Open **Game Reader** from the Start menu
+4. Go to **Voices** → download **Kokoro TTS** and at least one character voice
+5. Press **Ctrl+Shift+R** to select a screen region, then **Ctrl+Shift+T** to read
 
 ---
 
 ## Hotkeys
 
 | Hotkey | Action |
-|---|---|
+|--------|--------|
 | Ctrl+Shift+R | Draw selection region on screen |
 | Ctrl+Shift+T | Read selected region aloud |
 | Ctrl+Shift+S | Stop playback |
-| Ctrl+Shift+V | Cycle between Dagoth Ur / Narrator |
+| Ctrl+Shift+V | Cycle between installed voices |
 | Ctrl+Shift+Q | Quit |
 
 ---
 
-## First run notes
+## Development
 
-- **Kokoro model** (~330MB) downloads automatically on first launch from HuggingFace and is cached locally. Subsequent launches use the cache with no internet needed.
-- **Dagoth Ur / Narrator** voices warm up in the background at startup (a throwaway conversion compiles the CUDA kernels), so your first read is fast (~0.5s) instead of paying a ~6s one-time compile. Switching between the two RVC voices reloads the model weights (~2 seconds) on the first call after the switch. Long passages stream sentence-by-sentence, so audio starts as soon as the first part is ready.
-- The region you select with Ctrl+Shift+R is saved to `%APPDATA%\GameReader\config.json` and restored on next launch.
-- **Background OCR prefetch** is on by default: the app quietly OCRs your region whenever its pixels change, so reading static text (quest logs, tooltips) skips OCR and starts speaking sooner. It only re-OCRs on change, but if the constant background work bothers you, set `"prefetch_ocr": false` in the config file.
+### Prerequisites
+
+- Node.js 20+
+- Rust (for Tauri)
+- Python 3.11 with CUDA PyTorch
+- Optional: 7-Zip (for bundling Tesseract on Windows)
+
+### Setup
+
+```powershell
+git clone https://github.com/baylic/game-reader.git
+cd game-reader
+
+npm install
+pip install -r engine/requirements.txt
+pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 torchaudio==2.11.0+cu128 --index-url https://download.pytorch.org/whl/cu128
+
+# Generate icons
+python scripts/generate-icons.py
+
+# Optional: bundle Tesseract for OCR (Windows)
+.\scripts\fetch-tesseract.ps1
+```
+
+### Run in dev mode
+
+Terminal 1 — frontend:
+
+```powershell
+npm run dev
+```
+
+Terminal 2 — Tauri shell (uses Python engine automatically):
+
+```powershell
+$env:PYTHONPATH = "."
+$env:GAME_READER_ALLOW_HF_DOWNLOAD = "1"
+npm run tauri dev
+```
+
+Or test the engine alone:
+
+```powershell
+$env:PYTHONPATH = "."
+python -m engine
+```
+
+### Release build (Windows)
+
+```powershell
+.\scripts\fetch-tesseract.ps1
+.\scripts\build-engine.ps1
+npm run tauri build
+```
+
+Installers are written to `src-tauri/target/release/bundle/`.
+
+---
+
+## Project structure
+
+```
+game-reader/
+  src/                 React UI (settings, voice manager)
+  src-tauri/           Tauri shell (tray, hotkeys, overlay, downloads)
+  engine/              Python ML sidecar (OCR, Kokoro, RVC)
+  assets/              Voice catalog, bundled Tesseract
+  scripts/             Build helpers
+```
 
 ---
 
@@ -109,32 +129,16 @@ python main.py
 
 - Use **Borderless Windowed** mode — overlays don't work over exclusive fullscreen
 - Select your region over an in-game text area (quest log, dialogue box, tooltip)
-- If OCR is misreading text, try selecting a tighter region around just the text
+- If OCR misreads text, try selecting a tighter region around just the text
 
 ---
 
 ## Training your own RVC voice
 
-The Dagoth Ur voice was trained using [Applio](https://github.com/IAHispano/Applio). If you want to train a different voice:
-
-1. Put ~20 seconds of clean audio in `Applio\logs\<name>\sliced_audios\` (16-bit WAV, 40kHz)
-2. Follow the Applio preprocessing and feature extraction steps
-3. Run training with `python Applio\run_train.py`
-4. Export the model with `python Applio\export_model.py`
+See the [Applio](https://github.com/IAHispano/Applio) workflow in the previous README section. After exporting a `.pth` model, add it to `assets/voices.json` and publish via GitHub Releases.
 
 ---
 
-## File structure
+## Legacy Python-only setup
 
-```
-game-reader/
-  main.py          — entry point, hotkeys, system tray
-  overlay.py       — fullscreen transparent region selector
-  capture.py       — screen capture (mss)
-  ocr.py           — Tesseract OCR + preprocessing
-  tts.py           — multi-voice TTS (Kokoro + RVC)
-  config.py        — persistent config (region, hotkeys, voice)
-  rvc_worker.py    — persistent RVC subprocess worker
-  rvc_infer.py     — RVC inference script (runs in rvc_env)
-  requirements.txt
-```
+The pre-v2 manual setup (`python main.py`, separate `rvc_env`, etc.) is deprecated. Use the desktop app or `python -m engine` for development.

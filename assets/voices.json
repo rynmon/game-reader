@@ -1,0 +1,23 @@
+[
+  {
+    "id": "dagoth",
+    "label": "Dagoth Ur",
+    "description": "Trained RVC voice model from Morrowind",
+    "release_tag": "v1.0",
+    "asset": "dagoth_ur_v2.pth",
+    "size_bytes": 55220472,
+    "f0up_key": -12,
+    "speed": 1.0
+  },
+  {
+    "id": "narrator",
+    "label": "Narrator",
+    "description": "Trained RVC voice model of the Baldur's Gate 3 narrator",
+    "release_tag": "v1.1",
+    "asset": "bg3_narrator_v2.pth",
+    "size_bytes": 55232492,
+    "f0up_key": -6,
+    "speed": 0.8,
+    "recommended": true
+  }
+]
