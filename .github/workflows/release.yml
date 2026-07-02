@@ -10,6 +10,10 @@ on:
         description: "Release tag to publish (e.g. v2.0.0)"
         required: true
         default: "v2.0.0"
+      force_engine_build:
+        description: "Force rebuild engine sidecars even if engine/ unchanged"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -21,12 +25,52 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        id: tag
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect engine changes
+        id: engine
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT="${{ steps.tag.outputs.name }}"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_engine_build }}" = "true" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Engine rebuild forced via workflow_dispatch."
+            exit 0
+          fi
+          git fetch --tags --force
+          PREV=$(git tag --sort=-version:refname | awk -v cur="$CURRENT" '$0==cur { if ((getline) > 0) print; exit }')
+          if [ -z "$PREV" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "No previous release tag — building engine."
+            exit 0
+          fi
+          echo "previous_tag=$PREV" >> "$GITHUB_OUTPUT"
+          if git diff --name-only "$PREV" HEAD | grep -qE '^(engine/|scripts/build-engine\.ps1)'; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Engine paths changed since $PREV — rebuilding."
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Engine unchanged since $PREV — reusing release binaries."
+          fi
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
       - uses: actions/setup-python@v5
+        if: steps.engine.outputs.changed == 'true'
         with:
           python-version: "3.10"
 
@@ -43,20 +87,29 @@ jobs:
         run: npm ci
 
       - name: Build Python engine sidecar
+        if: steps.engine.outputs.changed == 'true'
         shell: pwsh
         run: ./scripts/build-engine.ps1
         env:
           PYTHONUNBUFFERED: "1"
 
-      - name: Resolve release tag
-        id: tag
-        shell: bash
+      - name: Reuse engine binaries from previous release
+        if: steps.engine.outputs.changed != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "name=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "name=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-          fi
+          $tag = "${{ steps.engine.outputs.previous_tag }}"
+          if (-not $tag) { throw "Missing previous_tag for engine reuse." }
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          gh release download $tag --repo rynmon/game-reader `
+            -p "game-reader-engine-x86_64-pc-windows-msvc.exe" `
+            -p "rvc-worker-x86_64-pc-windows-msvc.exe" `
+            -D src-tauri/binaries
+          Get-ChildItem src-tauri/binaries | ForEach-Object {
+            $gb = [math]::Round($_.Length / 1GB, 2)
+            Write-Host "==> Reused: $($_.Name) ($gb GB) from $tag"
+          }
 
       - name: Build Tauri NSIS installer
         run: npm run tauri build -- --bundles nsis
