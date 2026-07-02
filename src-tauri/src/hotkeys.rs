@@ -14,7 +14,6 @@ pub async fn open_region_selector(app: tauri::AppHandle) -> Result<(), String> {
         .fullscreen(true)
         .decorations(false)
         .always_on_top(true)
-        .transparent(true)
         .skip_taskbar(true)
         .resizable(false)
         .build()

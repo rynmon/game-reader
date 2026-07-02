@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "identifier": "com.gamereader.app",
+  "identifier": "default",
   "description": "Game Reader desktop capabilities",
   "windows": ["main", "overlay"],
   "permissions": [

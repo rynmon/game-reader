@@ -221,6 +221,7 @@ pub fn run() {
                             });
                         }
                         "quit" => {
+                            let app = app.clone();
                             tauri::async_runtime::spawn(async move {
                                 eng.shutdown().await;
                                 app.exit(0);

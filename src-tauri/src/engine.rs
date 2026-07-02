@@ -1,10 +1,11 @@
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{oneshot, Mutex};
@@ -16,7 +17,7 @@ type PendingMap = HashMap<u64, oneshot::Sender<Result<Value, String>>>;
 pub struct EngineClient {
     child: Mutex<Option<Child>>,
     stdin: Mutex<Option<ChildStdin>>,
-    pending: Mutex<PendingMap>,
+    pending: Arc<Mutex<PendingMap>>,
     app: AppHandle,
 }
 
@@ -25,7 +26,7 @@ impl EngineClient {
         Self {
             child: Mutex::new(None),
             stdin: Mutex::new(None),
-            pending: Mutex::new(HashMap::new()),
+            pending: Arc::new(Mutex::new(HashMap::new())),
             app,
         }
     }
@@ -205,7 +206,7 @@ impl EngineClient {
         }
 
         rx.await
-            .map_err(|_| "Engine closed".into())?
+            .map_err(|_| "Engine closed".to_string())?
     }
 
     pub async fn shutdown(&self) {
